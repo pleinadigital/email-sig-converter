@@ -202,6 +202,30 @@
     });
   }
 
+  // Converts a <div> containing inline-block social icon <a> tags into a
+  // single-row <table> so Outlook renders them horizontally instead of stacking.
+  function fixSocialIconsDiv(s) {
+    // Match a <div> whose direct children are <a> and <span style="display:inline-block; width:Npx"> spacers
+    return s.replace(
+      /<div>(\s*(?:<a\b[^>]*>[\s\S]*?<\/a>\s*|<span[^>]*display\s*:\s*inline-block[^>]*>\s*<\/span>\s*)+)<\/div>/gi,
+      (match, inner) => {
+        // Extract just the <a> tags (skip spacer spans)
+        const links = [];
+        const linkRe = /<a\b([\s\S]*?)<\/a>/gi;
+        let m;
+        while ((m = linkRe.exec(inner)) !== null) {
+          links.push('<a' + m[1] + '</a>');
+        }
+        // Only rewrite if we found multiple icon links
+        if (links.length < 2) return match;
+        const cells = links.map(link =>
+          `<td style="padding:0 4px 0 0; vertical-align:middle;">${link}</td>`
+        ).join('');
+        return `<table cellpadding="0" cellspacing="0" border="0" style="display:inline-table; vertical-align:middle;"><tbody><tr>${cells}</tr></tbody></table>`;
+      }
+    );
+  }
+
   function run() {
     const input = document.getElementById('inputHTML').value.trim();
     if (!input) { document.getElementById('status').textContent = 'Please paste HTML first.'; return; }
@@ -226,6 +250,7 @@
     applyFix('Protocol-relative URLs → https://',  s => s.replace(/href="\/\//g,'href="https://'));
     applyFix('aria-label removed',                 s => s.replace(/\s*aria-label="[^"]*"/g,''), 'info');
     applyFix('role="presentation" removed',        s => s.replace(/\s*role="presentation"/g,''), 'info');
+    applyFix('Social icons: div → table row',      fixSocialIconsDiv);
 
     h = h.replace(/style="\s*"/g,'').replace(/style=";\s*/g,'style="');
     converted = h;
