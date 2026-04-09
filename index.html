@@ -148,11 +148,11 @@
     <div class="tabs">
       <div class="tab active" id="tab-outlook" onclick="switchTab('outlook')">📧 Outlook Preview</div>
       <div class="tab" id="tab-gmail" onclick="switchTab('gmail')">✉️ Gmail Preview</div>
-      <div class="tab" id="tab-code" onclick="switchTab('code')">🔧 Raw Code</div>
+      <div class="tab" id="tab-code" onclick="switchTab('code')">🔧 HubSpot Code</div>
       <div class="tab-spacer"></div>
       <div class="tab-btn-wrap" id="tbtn-outlook"><button class="btn btn-green" onclick="copyRendered('outlook')">Copy for Outlook</button></div>
-      <div class="tab-btn-wrap" id="tbtn-gmail" style="display:none"><button class="btn btn-blue" onclick="copyRendered('gmail')">Copy for Gmail</button></div>
-      <div class="tab-btn-wrap" id="tbtn-code" style="display:none"><button class="btn btn-ghost" onclick="copyRawCode()">Copy Raw HTML</button></div>
+      <div class="tab-btn-wrap" id="tbtn-gmail" style="display:none"><button class="btn btn-green" onclick="copyRendered('gmail')">Copy for Gmail</button></div>
+      <div class="tab-btn-wrap" id="tbtn-code" style="display:none"><button class="btn btn-green" onclick="copyRawCode()">Copy for HubSpot</button></div>
     </div>
 
     <!-- Outlook preview pane -->
@@ -171,7 +171,7 @@
 
     <!-- Raw code pane -->
     <div class="pane" id="pane-code">
-      <div id="codeOut"><div class="empty-state"><div class="empty-icon">⟶</div><div>Converted code appears here</div></div></div>
+      <div id="codeOut"><div class="empty-state"><div class="empty-icon">⟶</div><div>HubSpot-ready code appears here</div></div></div>
     </div>
   </div>
 
@@ -337,7 +337,7 @@
     const pre = document.querySelector('.code-out');
     if (!pre) return;
     try { await navigator.clipboard.writeText(pre.textContent); } catch {}
-    showFlash('Raw HTML copied!');
+    showFlash('HubSpot HTML copied!');
   }
 
   function clearAll() {
@@ -345,7 +345,7 @@
     converted = '';
     document.getElementById('outlookWrap').innerHTML = `<div class="empty-state"><div class="empty-icon">📧</div><div>Outlook preview appears after converting</div></div>`;
     document.getElementById('gmailWrap').innerHTML   = `<div class="empty-state"><div class="empty-icon">✉️</div><div>Gmail preview appears after converting</div></div>`;
-    document.getElementById('codeOut').innerHTML     = `<div class="empty-state"><div class="empty-icon">⟶</div><div>Converted code appears here</div></div>`;
+    document.getElementById('codeOut').innerHTML     = `<div class="empty-state"><div class="empty-icon">⟶</div><div>HubSpot-ready code appears here</div></div>`;
     document.getElementById('issuesWrap').classList.remove('open');
     document.getElementById('badge').classList.remove('show');
     document.getElementById('status').textContent = 'Paste your signature HTML and click Convert';
