@@ -106,7 +106,13 @@
   .go-btn:hover { opacity:.9; transform:translateY(-1px); box-shadow:0 4px 20px rgba(91,106,240,.4); }
   .go-btn:active { transform:none; }
   .badge { font-family:var(--mono); font-size:11px; padding:4px 10px; border-radius:4px; display:none; }
-  .badge.show { display:inline-flex; align-items:center; gap:5px; background:rgba(52,211,153,.15); border:1px solid rgba(52,211,153,.4); color:var(--green); }
+  .badge.warn { display:inline-flex; align-items:center; gap:5px; background:rgba(251,191,36,.15); border:1px solid rgba(251,191,36,.4); color:var(--yellow); }
+  .badge.danger { display:inline-flex; align-items:center; gap:5px; background:rgba(248,113,113,.15); border:1px solid rgba(248,113,113,.4); color:var(--red); }
+  .char-count { font-family:var(--mono); font-size:11px; padding:4px 10px; border-radius:4px; display:none; }
+  .char-count.show { display:inline-flex; align-items:center; gap:5px; }
+  .char-count.ok     { background:rgba(52,211,153,.15);  border:1px solid rgba(52,211,153,.4);  color:var(--green); }
+  .char-count.warn   { background:rgba(251,191,36,.15);  border:1px solid rgba(251,191,36,.4);  color:var(--yellow); }
+  .char-count.danger { background:rgba(248,113,113,.15); border:1px solid rgba(248,113,113,.4); color:var(--red); }
   .status { margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--muted); }
 
   .issues-wrap { grid-column:1/-1; border-top:1px solid var(--border); max-height:0; overflow:hidden; transition:max-height .3s; background:var(--bg); flex-shrink:0; }
@@ -185,6 +191,7 @@
   <div class="action-bar">
     <button class="go-btn" onclick="run()">Convert →</button>
     <div class="badge" id="badge"></div>
+    <div class="char-count" id="charCount"></div>
     <span class="status" id="status">Paste your signature HTML and click Convert</span>
   </div>
 </div>
@@ -202,8 +209,45 @@
     });
   }
 
-  // Converts a <div> containing inline-block social icon <a> tags into a
-  // single-row <table> so Outlook renders them horizontally instead of stacking.
+  // Reduces large image widths to be thread-safe and adds height="auto"
+  // so images scale down gracefully when Outlook narrows the column.
+  function fixImageWidths(s) {
+    // Cap any img width attribute above 120 down to 100px (safe for thread indent)
+    // and ensure no inline width style overrides it
+    return s.replace(/<img([^>]*?)>/gi, (match, attrs) => {
+      // Extract current width attribute value
+      const wMatch = attrs.match(/\bwidth="(\d+)"/i);
+      if (!wMatch) return match;
+      const w = parseInt(wMatch[1]);
+      // Only touch images that are likely logos/photos (width > 80px), leave small icons alone
+      if (w <= 80) return match;
+      const newW = Math.min(w, 100);
+      let newAttrs = attrs.replace(/\bwidth="\d+"/i, `width="${newW}"`);
+      // Remove any style width that would conflict
+      newAttrs = newAttrs.replace(/;\s*width\s*:\s*\d+px/gi, '').replace(/\bwidth\s*:\s*\d+px;?\s*/gi, '');
+      return `<img${newAttrs}>`;
+    });
+  }
+
+  // Wraps the outermost table in a max-width container and ensures it
+  // won't blow out on narrow reply/forward widths.
+  function fixOuterTableWidth(s) {
+    // Find the first (outermost) <table> tag and add width="100%" if it doesn't already have a width,
+    // plus style max-width:600px so it constrains in wide clients too
+    return s.replace(/^(\s*)<table\b([^>]*)>/i, (match, ws, attrs) => {
+      // Don't double-add
+      if (/\bwidth=/i.test(attrs)) {
+        // Already has width — just ensure max-width:600px is in style
+        if (!/max-width/i.test(attrs)) {
+          attrs = attrs.replace(/style="([^"]*)"/i, (sm, sv) => `style="${sv}; max-width:600px"`);
+          if (!/style=/i.test(attrs)) attrs += ' style="max-width:600px"';
+        }
+        return `${ws}<table${attrs}>`;
+      }
+      return `${ws}<table${attrs} width="100%" style="max-width:600px">`;
+    });
+  }
+
   function fixSocialIconsDiv(s) {
     // Match a <div> whose direct children are <a> and <span style="display:inline-block; width:Npx"> spacers
     return s.replace(
@@ -251,65 +295,22 @@
     applyFix('aria-label removed',                 s => s.replace(/\s*aria-label="[^"]*"/g,''), 'info');
     applyFix('role="presentation" removed',        s => s.replace(/\s*role="presentation"/g,''), 'info');
     applyFix('Social icons: div → table row',      fixSocialIconsDiv);
+    applyFix('Images scaled for thread safety',    fixImageWidths);
+    applyFix('Outer table width capped at 600px',  fixOuterTableWidth);
 
     h = h.replace(/style="\s*"/g,'').replace(/style=";\s*/g,'style="');
+
+    // Auto-minify if approaching or over Gmail's 10,000 char limit
+    if (h.length > 8500) {
+      const before = h.length;
+      h = minify(h);
+      if (h.length < before) fixes.push({ type: 'fixed', label: `Auto-minified for Gmail (${before.toLocaleString()} → ${h.length.toLocaleString()} chars)` });
+    }
+
     converted = h;
+    updateCharCount(h);
 
-    // ── Outlook preview pane ──
-    document.getElementById('outlookWrap').innerHTML = `
-      <div class="preview-card">
-        <div class="ol-tbar"><span class="ol-tbar-label">New Message — Outlook</span></div>
-        <div class="ol-field"><span>To:</span> recipient@example.com</div>
-        <div class="ol-field"><span>Subject:</span> Following up</div>
-        <div class="ol-body">
-          <p>Hi [Name],</p>
-          <p>Hope you're doing well. Just following up on our last conversation...</p>
-          <p>&nbsp;</p>
-          <p>Best,</p>
-        </div>
-        <div class="ol-sig">
-          <div class="sig-lbl">— Signature — click "Copy for Outlook" then paste into Outlook signature settings</div>
-          <span class="sig-rendered" id="sigOutlook">${h}</span>
-          <div class="copy-hint" id="hintOutlook">
-            ✅ Copied as rich text.<br>
-            In Outlook: File → Options → Mail → Signatures → New/Edit → paste with <strong>Ctrl+V</strong>.
-          </div>
-        </div>
-      </div>`;
-
-    // ── Gmail preview pane ──
-    document.getElementById('gmailWrap').innerHTML = `
-      <div class="preview-card">
-        <div class="gmail-tbar">
-          <button class="gtb"><b>B</b></button><button class="gtb"><i>I</i></button><button class="gtb"><u>U</u></button>
-          <div class="gdiv"></div>
-          <button class="gtb">≡</button><button class="gtb">≡</button>
-          <div class="gdiv"></div>
-          <button class="gtb">🔗</button><button class="gtb">📷</button>
-        </div>
-        <div class="gmail-body">
-          <p>Hi [Name],</p>
-          <p>Hope you're doing well. Just following up on our last conversation...</p>
-          <p>&nbsp;</p>
-          <p>Best,</p>
-        </div>
-        <div class="gmail-sig">
-          <div class="sig-lbl">— Signature — click "Copy for Gmail" then paste into Gmail Settings</div>
-          <span class="sig-rendered" id="sigGmail">${h}</span>
-          <div class="copy-hint" id="hintGmail">
-            ✅ Copied as rich text.<br>
-            Open Gmail → Settings (⚙) → See all settings → Signature → paste with <strong>Ctrl+V</strong> (or ⌘V on Mac).
-          </div>
-        </div>
-      </div>`;
-
-    // ── Raw code pane ──
-    const codeOut = document.getElementById('codeOut');
-    codeOut.innerHTML = '';
-    const pre = document.createElement('pre');
-    pre.className = 'code-out';
-    pre.textContent = h.replace(/></g,'>\n<').replace(/\n\n+/g,'\n').trim();
-    codeOut.appendChild(pre);
+    renderPanes(h);
 
     // Fixes panel
     document.getElementById('issuesList').innerHTML = fixes.map(f =>
@@ -365,6 +366,90 @@
     showFlash('HubSpot HTML copied!');
   }
 
+  function updateCharCount(html) {
+    const len = html.length;
+    const LIMIT = 10000;
+    const pct = Math.round(len / LIMIT * 100);
+    const el = document.getElementById('charCount');
+    el.classList.add('show');
+    if (len <= LIMIT * 0.85) {
+      el.className = 'char-count show ok';
+      el.textContent = `${len.toLocaleString()} / 10,000 chars`;
+    } else if (len <= LIMIT) {
+      el.className = 'char-count show warn';
+      el.textContent = `⚠ ${len.toLocaleString()} / 10,000 chars (${pct}% of Gmail limit)`;
+    } else {
+      el.className = 'char-count show danger';
+      el.textContent = `✕ ${len.toLocaleString()} / 10,000 chars — exceeds Gmail limit by ${(len - LIMIT).toLocaleString()}`;
+    }
+  }
+
+  function minify(html) {
+    let m = html;
+    m = m.replace(/<!--[\s\S]*?-->/g, '');
+    m = m.replace(/>\s+</g, '><');
+    m = m.replace(/\s{2,}/g, ' ');
+    m = m.replace(/\s*=\s*"/g, '="');
+    m = m.replace(/\s*style="\s*"/g, '');
+    return m.trim();
+  }
+
+  function renderPanes(h) {
+    // Outlook pane
+    document.getElementById('outlookWrap').innerHTML = `
+      <div class="preview-card">
+        <div class="ol-tbar"><span class="ol-tbar-label">New Message — Outlook</span></div>
+        <div class="ol-field"><span>To:</span> recipient@example.com</div>
+        <div class="ol-field"><span>Subject:</span> Following up</div>
+        <div class="ol-body">
+          <p>Hi [Name],</p>
+          <p>Hope you're doing well. Just following up on our last conversation...</p>
+          <p>&nbsp;</p>
+          <p>Best,</p>
+        </div>
+        <div class="ol-sig">
+          <div class="sig-lbl">— Signature — click "Copy for Outlook" then paste into Outlook signature settings</div>
+          <span class="sig-rendered" id="sigOutlook">${h}</span>
+          <div class="copy-hint" id="hintOutlook">
+            ✅ Copied as rich text.<br>
+            In Outlook: File → Options → Mail → Signatures → New/Edit → paste with <strong>Ctrl+V</strong>.
+          </div>
+        </div>
+      </div>`;
+    // Gmail pane
+    document.getElementById('gmailWrap').innerHTML = `
+      <div class="preview-card">
+        <div class="gmail-tbar">
+          <button class="gtb"><b>B</b></button><button class="gtb"><i>I</i></button><button class="gtb"><u>U</u></button>
+          <div class="gdiv"></div>
+          <button class="gtb">≡</button><button class="gtb">≡</button>
+          <div class="gdiv"></div>
+          <button class="gtb">🔗</button><button class="gtb">📷</button>
+        </div>
+        <div class="gmail-body">
+          <p>Hi [Name],</p>
+          <p>Hope you're doing well. Just following up on our last conversation...</p>
+          <p>&nbsp;</p>
+          <p>Best,</p>
+        </div>
+        <div class="gmail-sig">
+          <div class="sig-lbl">— Signature — click "Copy for Gmail" then paste into Gmail Settings</div>
+          <span class="sig-rendered" id="sigGmail">${h}</span>
+          <div class="copy-hint" id="hintGmail">
+            ✅ Copied as rich text.<br>
+            Open Gmail → Settings (⚙) → See all settings → Signature → paste with <strong>Ctrl+V</strong> (or ⌘V on Mac).
+          </div>
+        </div>
+      </div>`;
+    // Code pane
+    const codeOut = document.getElementById('codeOut');
+    codeOut.innerHTML = '';
+    const pre = document.createElement('pre');
+    pre.className = 'code-out';
+    pre.textContent = h.replace(/></g,'>\n<').replace(/\n\n+/g,'\n').trim();
+    codeOut.appendChild(pre);
+  }
+
   function clearAll() {
     document.getElementById('inputHTML').value = '';
     converted = '';
@@ -373,6 +458,7 @@
     document.getElementById('codeOut').innerHTML     = `<div class="empty-state"><div class="empty-icon">⟶</div><div>HubSpot-ready code appears here</div></div>`;
     document.getElementById('issuesWrap').classList.remove('open');
     document.getElementById('badge').classList.remove('show');
+    document.getElementById('charCount').classList.remove('show');
     document.getElementById('status').textContent = 'Paste your signature HTML and click Convert';
   }
 
