@@ -270,6 +270,66 @@
     );
   }
 
+  function stripContactIcons(s) {
+    const contactIconPattern = /phone-icon|email-icon|link-icon|website-icon|mobile-icon|fax-icon|address-icon|phone_icon|email_icon|link_icon/i;
+
+    // Remove <span> wrappers that only contain a contact icon img
+    s = s.replace(/<span[^>]*>\s*(<img[^>]*>)\s*<\/span>/gi, (match, img) => {
+      if (contactIconPattern.test(img)) return '';
+      return match;
+    });
+
+    // Remove any remaining unwrapped contact icon imgs
+    s = s.replace(/<img[^>]*>/gi, match => {
+      if (contactIconPattern.test(match)) return '';
+      return match;
+    });
+
+    // Clean up <td> cells left empty after icon removal
+    s = s.replace(/<td[^>]*>\s*<\/td>/gi, '');
+
+    // Clean up <tr> rows left entirely empty
+    s = s.replace(/<tr[^>]*>\s*<\/tr>/gi, '');
+
+    return s;
+  }
+
+  function fixAltText(s) {
+    const socialPattern  = /linkedin|facebook|instagram|twitter|youtube|tiktok|pinterest|snapchat/i;
+    const contactPattern = /phone-icon|email-icon|link-icon|website-icon|mobile-icon/i;
+
+    // First pass: find all large images (>40px) that are missing meaningful alt text
+    // and aren't social/contact icons — assign headshot to first, logo to second
+    let largeImageCount = 0;
+
+    return s.replace(/<img([^>]*?)>/gi, (match, attrs) => {
+      // Already has meaningful alt text — leave it alone
+      if (/\balt="[^"]+"/i.test(attrs)) return match;
+
+      const srcMatch = attrs.match(/\bsrc="([^"]+)"/i);
+      const src = srcMatch ? srcMatch[1] : '';
+      const width = parseInt((attrs.match(/\bwidth="(\d+)"/i) || [])[1] || '0');
+
+      // Social and contact icons get empty alt (decorative)
+      if (socialPattern.test(src) || contactPattern.test(src)) {
+        return /\balt=/i.test(attrs) ? match : `<img${attrs} alt="">`;
+      }
+
+      // Small images are decorative
+      if (width <= 40) {
+        return /\balt=/i.test(attrs) ? match : `<img${attrs} alt="">`;
+      }
+
+      // Large images: first = headshot, second = logo
+      largeImageCount++;
+      if (largeImageCount === 1) return `<img${attrs} alt="Headshot">`;
+      if (largeImageCount === 2) return `<img${attrs} alt="Logo">`;
+
+      // Any further large images — leave with empty alt
+      return `<img${attrs} alt="">`;
+    });
+  }
+
   function run() {
     const input = document.getElementById('inputHTML').value.trim();
     if (!input) { document.getElementById('status').textContent = 'Please paste HTML first.'; return; }
@@ -297,6 +357,8 @@
     applyFix('Social icons: div → table row',      fixSocialIconsDiv);
     applyFix('Images scaled for thread safety',    fixImageWidths);
     applyFix('Outer table width capped at 600px',  fixOuterTableWidth);
+    applyFix('Contact icons stripped',             stripContactIcons);
+    applyFix('Alt text added to images',           fixAltText);
 
     h = h.replace(/style="\s*"/g,'').replace(/style=";\s*/g,'style="');
 
