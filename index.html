@@ -132,7 +132,7 @@
 <header>
   <div class="logo">OL</div>
   <h1>Pleina Email Signature Optimizer</h1>
-  <span class="version">v2.2</span>
+  <span class="version">v2.7</span>
 </header>
 
 <div class="workspace">
@@ -233,9 +233,53 @@
   // <tr><td height="24" aria-label="Horizontal Spacer"></td></tr>
   // Run BEFORE aria-label removal so we can target it precisely.
   function fixLogoSpacer(s) {
+    // Only replace the FIRST occurrence of img→spacer→img in the left column
+    // (subsequent spacers may separate logo from social icons — leave those alone)
+    let replaced = false;
     return s.replace(
       /(<tr[^>]*>\s*<td[^>]*>\s*<img[^>]*>\s*<\/td>\s*<\/tr>)\s*(<tr[^>]*>\s*<td\s+height=")\d+(">\s*<\/td>\s*<\/tr>)\s*(<tr[^>]*>\s*<td[^>]*>\s*<img)/gi,
-      '$1<tr><td height="24"></td></tr>$4'
+      (match, prevRow, open, close, nextRow) => {
+        if (replaced) return match;
+        replaced = true;
+        return prevRow + '<tr><td height="24"></td></tr>' + nextRow;
+      }
+    );
+  }
+
+  function fixSocialIconsDiv(s) {
+    // Match a <div> whose direct children are <a> and <span> spacers
+    return s.replace(
+      /<div>(\s*(?:<a\b[^>]*>[\s\S]*?<\/a>\s*|<span[^>]*display\s*:\s*inline-block[^>]*>\s*<\/span>\s*)+)<\/div>/gi,
+      (match, inner) => {
+        const links = [];
+        const linkRe = /<a\b([\s\S]*?)<\/a>/gi;
+        let m;
+        while ((m = linkRe.exec(inner)) !== null) {
+          links.push('<a' + m[1] + '</a>');
+        }
+        if (links.length < 2) return match;
+        // Keep background-color on <a> tags (icons are white, need it to show)
+        // Only strip padding (causes extra space) and border-radius (causes cropping in Outlook)
+        const cleanLinks = links.map(link =>
+          link
+            .replace(/;\s*padding\s*:\s*[^;"]+/gi, '')
+            .replace(/\bpadding\s*:\s*0px;?\s*/gi, '')
+            // Strip border-radius from the <a> tag
+            .replace(/;\s*border-radius\s*:\s*[^;"]+/gi, '')
+            .replace(/\bborder-radius\s*:\s*[^;"]+;?\s*/gi, '')
+            // Strip only border-radius from the img inside (keep its background-color too)
+            .replace(/(<img[^>]*style=")([^"]*)(")/, (im, pre, style, post) =>
+              pre + style
+                .replace(/;\s*border-radius\s*:\s*[^;"]*/gi, '')
+                .replace(/border-radius\s*:\s*[^;";]*/gi, '')
+              + post
+            )
+        );
+        const cells = cleanLinks.map(link =>
+          `<td style="padding:0 4px 0 0; vertical-align:middle;">${link}</td>`
+        ).join('');
+        return `<table cellpadding="0" cellspacing="0" border="0" style="vertical-align:middle;"><tbody><tr>${cells}</tr></tbody></table>`;
+      }
     );
   }
 
@@ -268,27 +312,6 @@
     });
   }
 
-  function fixSocialIconsDiv(s) {
-    // Match a <div> whose direct children are <a> and <span style="display:inline-block; width:Npx"> spacers
-    return s.replace(
-      /<div>(\s*(?:<a\b[^>]*>[\s\S]*?<\/a>\s*|<span[^>]*display\s*:\s*inline-block[^>]*>\s*<\/span>\s*)+)<\/div>/gi,
-      (match, inner) => {
-        // Extract just the <a> tags (skip spacer spans)
-        const links = [];
-        const linkRe = /<a\b([\s\S]*?)<\/a>/gi;
-        let m;
-        while ((m = linkRe.exec(inner)) !== null) {
-          links.push('<a' + m[1] + '</a>');
-        }
-        // Only rewrite if we found multiple icon links
-        if (links.length < 2) return match;
-        const cells = links.map(link =>
-          `<td style="padding:0 4px 0 0; vertical-align:middle;">${link}</td>`
-        ).join('');
-        return `<table cellpadding="0" cellspacing="0" border="0" style="display:inline-table; vertical-align:middle;"><tbody><tr>${cells}</tr></tbody></table>`;
-      }
-    );
-  }
 
   function stripContactIcons(s) {
     const contactIconPattern = /phone-icon|email-icon|link-icon|website-icon|mobile-icon|fax-icon|address-icon|phone_icon|email_icon|link_icon/i;
@@ -392,9 +415,11 @@
     applyFix('max-width removed',                  s => s.replace(/;\s*max-width\s*:\s*\d+px/g,'').replace(/max-width\s*:\s*\d+px;?\s*/g,''));
     applyFix('display:block removed from <td>',    s => s.replace(/(<td[^>]*style="[^"]*?);\s*display\s*:\s*block([^"]*")/gi,'$1$2').replace(/(<td[^>]*style=")display\s*:\s*block;?\s*([^"]*")/gi,'$1$2'));
     applyFix('rgb() → hex',                        s => s.replace(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/g, (_,r,g,b)=>'#'+[r,g,b].map(v=>parseInt(v).toString(16).padStart(2,'0')).join('')));
+    applyFix('URL whitespace trimmed',             s => s.replace(/href="([^"]*)"/gi, (m, url) => `href="${url.trim()}"`));
     applyFix('Protocol-relative URLs → https://',  s => s.replace(/href="\/\//g,'href="https://'));
     applyFix('aria-label removed',                 s => s.replace(/\s*aria-label="[^"]*"/g,''), 'info');
     applyFix('role="presentation" removed',        s => s.replace(/\s*role="presentation"/g,''), 'info');
+    applyFix('font-size:medium removed from tables', s => s.replace(/;\s*font-size\s*:\s*medium/gi, '').replace(/font-size\s*:\s*medium\s*;?\s*/gi, ''));
     applyFix('Social icons: div → table row',      fixSocialIconsDiv);
     applyFix('Images scaled for thread safety',    fixImageWidths);
     applyFix('Outer table width capped at 600px',  fixOuterTableWidth);
@@ -405,6 +430,7 @@
     applyFix('Alt text added to images',           fixAltText);
     applyFix('Redundant border-left styles removed', s => s.replace(/;\s*border-left-width\s*:\s*[^;"]*/gi,'').replace(/;\s*border-left-style\s*:\s*[^;"]*/gi,'').replace(/;\s*border-left-color\s*:\s*[^;"]*/gi,''));
     applyFix('Empty legal content block removed',  s => s.replace(/<table[^>]*>\s*<tbody>\s*<tr>\s*<td[^>]*>\s*<div class="legal-content">[\s\S]*?<\/div>\s*<\/td>\s*<\/tr>\s*<\/tbody>\s*<\/table>/gi, ''));
+    applyFix('Orphaned trailing spacer tables removed', s => s.replace(/<table[^>]*>\s*<tbody>\s*<tr>\s*<td\s+height="\d+">\s*<\/td>\s*<\/tr>\s*<\/tbody>\s*<\/table>/gi, ''));
 
     h = h.replace(/style="\s*"/g,'').replace(/style=";\s*/g,'style="');
     // Fix double semicolons left by style cleanup
