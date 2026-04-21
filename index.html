@@ -132,7 +132,7 @@
 <header>
   <div class="logo">OL</div>
   <h1>Pleina Email Signature Optimizer</h1>
-  <span class="version">v1.1</span>
+  <span class="version">v2.2</span>
 </header>
 
 <div class="workspace">
@@ -229,33 +229,42 @@
     });
   }
 
-  // Increases the spacer row between headshot and logo from 24px to 36px
+  // The left-column spacer between headshot and logo is exactly:
+  // <tr><td height="24" aria-label="Horizontal Spacer"></td></tr>
+  // Run BEFORE aria-label removal so we can target it precisely.
   function fixLogoSpacer(s) {
-    let count = 0;
-    return s.replace(/<td\s+height="24"([^>]*)>/gi, (match, rest) => {
-      count++;
-      // The second spacer row (between headshot and logo) gets bumped up
-      if (count === 2) return `<td height="36"${rest}>`;
-      return match;
-    });
+    return s.replace(
+      /(<tr[^>]*>\s*<td[^>]*>\s*<img[^>]*>\s*<\/td>\s*<\/tr>)\s*(<tr[^>]*>\s*<td\s+height=")\d+(">\s*<\/td>\s*<\/tr>)\s*(<tr[^>]*>\s*<td[^>]*>\s*<img)/gi,
+      '$1<tr><td height="24"></td></tr>$4'
+    );
   }
 
-  // Wraps the outermost table in a max-width container and ensures it
-  // won't blow out on narrow reply/forward widths.
-  function fixOuterTableWidth(s) {
-    // Find the first (outermost) <table> tag and add width="100%" if it doesn't already have a width,
-    // plus style max-width:600px so it constrains in wide clients too
-    return s.replace(/^(\s*)<table\b([^>]*)>/i, (match, ws, attrs) => {
-      // Don't double-add
-      if (/\bwidth=/i.test(attrs)) {
-        // Already has width — just ensure max-width:600px is in style
-        if (!/max-width/i.test(attrs)) {
-          attrs = attrs.replace(/style="([^"]*)"/i, (sm, sv) => `style="${sv}; max-width:600px"`);
-          if (!/style=/i.test(attrs)) attrs += ' style="max-width:600px"';
-        }
-        return `${ws}<table${attrs}>`;
+  function fixContactRowSpacing(s) {
+    // Contact rows: height: 28px → 22px
+    s = s.replace(/(<tr[^>]*style="[^"]*?)height:\s*28px([^"]*")/gi, '$1height: 22px$2');
+    // Contact table has line-height: 1 which makes rows cramped — match to right column spacing
+    s = s.replace(/(<table[^>]*style="[^"]*?)line-height:\s*1([^"]*")/gi, '$1line-height: 22px$2');
+    // Set both divider spacers (above and below the rule) to 12px.
+    // The divider table is identified by width: 100% and contains a border-bottom td.
+    // We replace ALL height="24" tds within that specific table.
+    s = s.replace(
+      /(<table[^>]*width:\s*100%[^>]*>)([\s\S]*?<\/table>)/gi,
+      (match, open, body) => {
+        if (!/<td[^>]*border-bottom/i.test(body)) return match;
+        const fixedBody = body.replace(/<td\s+height="24"/gi, '<td height="12"');
+        return open + fixedBody;
       }
-      return `${ws}<table${attrs} width="100%" style="max-width:600px">`;
+    );
+    return s;
+  }
+
+  // Adds max-width to outermost table without changing its width attribute
+  function fixOuterTableWidth(s) {
+    return s.replace(/^(\s*<table\b)([^>]*)(>)/i, (match, open, attrs, close) => {
+      if (/max-width/i.test(attrs)) return match;
+      const newAttrs = attrs.replace(/style="([^"]*)"/i, (sm, sv) => `style="${sv}; max-width:600px"`);
+      if (newAttrs === attrs) return `${open}${attrs} style="max-width:600px"${close}`;
+      return `${open}${newAttrs}${close}`;
     });
   }
 
@@ -284,30 +293,40 @@
   function stripContactIcons(s) {
     const contactIconPattern = /phone-icon|email-icon|link-icon|website-icon|mobile-icon|fax-icon|address-icon|phone_icon|email_icon|link_icon/i;
 
-    // Remove <span> wrappers that only contain a contact icon img
+    // Target the full HubSpot icon cell structure:
+    // <td width="26"><table ...><tbody><tr><td><span><img src="...icon..."></span></td></tr></tbody></table></td>
+    // Match outer <td> containing a nested table whose only content is a contact icon img
+    s = s.replace(/<td[^>]*>\s*<table[^>]*>\s*<tbody>\s*<tr>\s*<td[^>]*>\s*<span[^>]*>\s*(<img[^>]*>)\s*<\/span>\s*<\/td>\s*<\/tr>\s*<\/tbody>\s*<\/table>\s*<\/td>/gi,
+      (match, img) => {
+        if (contactIconPattern.test(img)) return '';
+        return match;
+      }
+    );
+
+    // Also catch any remaining span-wrapped contact icon imgs not inside the above pattern
     s = s.replace(/<span[^>]*>\s*(<img[^>]*>)\s*<\/span>/gi, (match, img) => {
       if (contactIconPattern.test(img)) return '';
       return match;
     });
 
-    // Remove any remaining unwrapped contact icon imgs
+    // Catch any bare contact icon imgs still remaining
     s = s.replace(/<img[^>]*>/gi, match => {
       if (contactIconPattern.test(match)) return '';
       return match;
     });
 
-    // Remove <td> cells that contained ONLY an icon (now empty after removal above).
-    // But ONLY remove <td> cells that have no border-bottom style (i.e. not the divider row td).
+    // Remove any <td> cells now empty (but preserve divider tds with border-bottom
+    // AND spacer tds with a height attribute — those control layout spacing)
     s = s.replace(/<td([^>]*)>\s*<\/td>/gi, (match, attrs) => {
-      if (/border-bottom/i.test(attrs)) return match; // preserve divider td
+      if (/border-bottom/i.test(attrs)) return match;
+      if (/\bheight=/i.test(attrs)) return match;
       return '';
     });
 
-    // Remove <table> wrappers that only existed to hold the icon cell and are now empty
-    s = s.replace(/<table[^>]*>\s*<tbody>\s*<tr>\s*<\/tr>\s*<\/tbody>\s*<\/table>/gi, '');
-    s = s.replace(/<table[^>]*>\s*<tbody>\s*<\/tbody>\s*<\/table>/gi, '');
+    // Remove any empty inner tables left over
+    s = s.replace(/<table[^>]*>\s*<tbody>\s*(<tr>\s*<\/tr>\s*)*<\/tbody>\s*<\/table>/gi, '');
 
-    // Clean up <tr> rows that are truly empty (no tds, no content) — but NOT divider rows
+    // Remove empty <tr> rows (but not divider rows)
     s = s.replace(/<tr([^>]*)>\s*<\/tr>/gi, (match, attrs) => {
       if (/border/i.test(attrs)) return match;
       return '';
@@ -380,10 +399,16 @@
     applyFix('Images scaled for thread safety',    fixImageWidths);
     applyFix('Outer table width capped at 600px',  fixOuterTableWidth);
     applyFix('Headshot/logo spacing increased',    fixLogoSpacer);
+    applyFix('Contact row spacing normalized',     fixContactRowSpacing);
+    applyFix('Column gap reduced',                 s => s.replace(/\bwidth="46"/gi, 'width="24"').replace(/width:\s*46px/gi, 'width: 24px'));
     applyFix('Contact icons stripped',             stripContactIcons);
     applyFix('Alt text added to images',           fixAltText);
+    applyFix('Redundant border-left styles removed', s => s.replace(/;\s*border-left-width\s*:\s*[^;"]*/gi,'').replace(/;\s*border-left-style\s*:\s*[^;"]*/gi,'').replace(/;\s*border-left-color\s*:\s*[^;"]*/gi,''));
+    applyFix('Empty legal content block removed',  s => s.replace(/<table[^>]*>\s*<tbody>\s*<tr>\s*<td[^>]*>\s*<div class="legal-content">[\s\S]*?<\/div>\s*<\/td>\s*<\/tr>\s*<\/tbody>\s*<\/table>/gi, ''));
 
     h = h.replace(/style="\s*"/g,'').replace(/style=";\s*/g,'style="');
+    // Fix double semicolons left by style cleanup
+    h = h.replace(/;{2,}/g, ';');
 
     // Auto-minify if approaching or over Gmail's 10,000 char limit
     if (h.length > 8500) {
