@@ -132,7 +132,7 @@
 <header>
   <div class="logo">OL</div>
   <h1>Pleina Email Signature Optimizer</h1>
-  <span class="version">v2.7</span>
+  <span class="version">v2.8</span>
 </header>
 
 <div class="workspace">
@@ -427,6 +427,18 @@
     applyFix('Contact row spacing normalized',     fixContactRowSpacing);
     applyFix('Column gap reduced',                 s => s.replace(/\bwidth="46"/gi, 'width="24"').replace(/width:\s*46px/gi, 'width: 24px'));
     applyFix('Contact icons stripped',             stripContactIcons);
+    applyFix('Name spans font-size normalized',    s => s.replace(/<h2([^>]*)>([\s\S]*?)<\/h2>/gi, (match, attrs, inner) => {
+      // Extract font-size from h2 attrs, default to 18px
+      const sizeMatch = attrs.match(/font-size:\s*(\d+px)/i);
+      const size = sizeMatch ? sizeMatch[1] : '18px';
+      // Add explicit font-size to every <span> inside the h2 that doesn't already have one
+      const fixedInner = inner.replace(/<span([^>]*)>/gi, (sm, sattrs) => {
+        if (/font-size/i.test(sattrs)) return sm;
+        if (/style="/i.test(sattrs)) return `<span${sattrs.replace(/style="/, `style="font-size:${size}; `)}>`; 
+        return `<span${sattrs} style="font-size:${size}">`;
+      });
+      return `<h2${attrs}>${fixedInner}</h2>`;
+    }));
     applyFix('Alt text added to images',           fixAltText);
     applyFix('Redundant border-left styles removed', s => s.replace(/;\s*border-left-width\s*:\s*[^;"]*/gi,'').replace(/;\s*border-left-style\s*:\s*[^;"]*/gi,'').replace(/;\s*border-left-color\s*:\s*[^;"]*/gi,''));
     applyFix('Empty legal content block removed',  s => s.replace(/<table[^>]*>\s*<tbody>\s*<tr>\s*<td[^>]*>\s*<div class="legal-content">[\s\S]*?<\/div>\s*<\/td>\s*<\/tr>\s*<\/tbody>\s*<\/table>/gi, ''));
