@@ -132,7 +132,7 @@
 <header>
   <div class="logo">OL</div>
   <h1>Pleina Email Signature Optimizer</h1>
-  <span class="version">v3.0</span>
+  <span class="version">v3.1</span>
 </header>
 
 <div class="workspace">
@@ -153,11 +153,11 @@
   <div class="panel output-panel">
     <div class="tabs">
       <div class="tab active" id="tab-outlook" onclick="switchTab('outlook')">📧 Outlook Preview</div>
-      <div class="tab" id="tab-gmail" onclick="switchTab('gmail')">✉️ Gmail Preview</div>
+      <div class="tab" id="tab-gmail" onclick="switchTab('gmail')">✉️ Gmail / Apple Mail</div>
       <div class="tab" id="tab-code" onclick="switchTab('code')">🔧 HubSpot Code</div>
       <div class="tab-spacer"></div>
       <div class="tab-btn-wrap" id="tbtn-outlook"><button class="btn btn-green" onclick="copyRendered('outlook')">Copy for Outlook</button></div>
-      <div class="tab-btn-wrap" id="tbtn-gmail" style="display:none"><button class="btn btn-green" onclick="copyRendered('gmail')">Copy for Gmail</button></div>
+      <div class="tab-btn-wrap" id="tbtn-gmail" style="display:none"><button class="btn btn-green" onclick="copyRendered('gmail')">Copy for Gmail / Apple Mail</button></div>
       <div class="tab-btn-wrap" id="tbtn-code" style="display:none"><button class="btn btn-green" onclick="copyRawCode()">Copy for HubSpot</button></div>
     </div>
 
@@ -514,7 +514,7 @@
 
     const dest = target === 'outlook'
       ? 'Outlook → File → Options → Mail → Signatures'
-      : 'Gmail → Settings → Signature';
+      : 'Gmail → Settings → Signature / Apple Mail → Settings → Signatures';
     showFlash(success ? `✓ Copied! Paste into ${dest}` : 'Select the signature manually and copy with Ctrl+C');
   }
 
@@ -596,7 +596,8 @@
           <span class="sig-rendered" id="sigGmail">${h}</span>
           <div class="copy-hint" id="hintGmail">
             ✅ Copied as rich text.<br>
-            Open Gmail → Settings (⚙) → See all settings → Signature → paste with <strong>Ctrl+V</strong> (or ⌘V on Mac).
+            <strong>Gmail:</strong> Settings (⚙) → See all settings → Signature → paste with <strong>Ctrl+V</strong> (or ⌘V).<br>
+            <strong>Apple Mail:</strong> Settings → Signatures → select signature → paste with <strong>⌘V</strong>.
           </div>
         </div>
       </div>`;
